@@ -30,3 +30,4 @@ class Report:
             "entries": entries,
             "on_track": daily_goal is not None and total_calories <= daily_goal
         }
+    

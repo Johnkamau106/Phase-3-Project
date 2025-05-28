@@ -55,3 +55,4 @@ class FoodEntry(Base):
             db.commit()
             return True
         return False
+    

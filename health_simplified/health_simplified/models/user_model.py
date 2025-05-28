@@ -37,3 +37,4 @@ class User(Base):
             db.commit()
             return True
         return False
+    
