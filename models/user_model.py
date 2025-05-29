@@ -1,20 +1,23 @@
 from sqlalchemy import Column, Integer, String
 from sqlalchemy.orm import relationship
-from ..database import Base
+from DB.database import Base
 
 class User(Base):
     __tablename__ = "users"
 
     id = Column(Integer, primary_key=True, index=True)
-    name = Column(String, unique=True, index=True)
+    name = Column(String(50), unique=True, index=True)
 
     # Relationships
-    entries = relationship("FoodEntry", back_populates="user")
-    goals = relationship("Goal", back_populates="user")
-    meal_plans = relationship("MealPlan", back_populates="user")
+    entries = relationship("FoodEntry", back_populates="user", cascade="all, delete-orphan")
+    goals = relationship("Goal", back_populates="user", cascade="all, delete-orphan")
+    meal_plans = relationship("MealPlan", back_populates="user", cascade="all, delete-orphan")
 
     @classmethod
     def create(cls, db, name):
+        if not name or len(name) > 50:
+            raise ValueError("Name must be 1-50 characters")
+            
         user = cls(name=name)
         db.add(user)
         db.commit()
@@ -28,6 +31,10 @@ class User(Base):
     @classmethod
     def get_by_name(cls, db, name):
         return db.query(cls).filter(cls.name == name).first()
+    
+    @classmethod
+    def get_by_id(cls, db, user_id):
+        return db.query(cls).filter(cls.id == user_id).first()
 
     @classmethod
     def delete(cls, db, user_id):
