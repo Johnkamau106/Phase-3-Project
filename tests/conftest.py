@@ -1,6 +1,7 @@
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.exc import ResourceClosedError
 from typer.testing import CliRunner
 
 from health_simplified.db.database import Base
@@ -23,7 +24,7 @@ def test_engine():
     yield engine
     Base.metadata.drop_all(bind=engine)
 
-# ✅ Create a new DB session for each test
+# ✅ Create a new DB session for each test with safe rollback
 @pytest.fixture
 def test_db(test_engine):
     connection = test_engine.connect()
@@ -33,5 +34,10 @@ def test_db(test_engine):
     yield db
 
     db.close()
-    transaction.rollback()
+    # Safe rollback to avoid "transaction already deassociated" warning
+    try:
+        transaction.rollback()
+    except ResourceClosedError:
+        # Transaction was already rolled back or closed, so ignore the error
+        pass
     connection.close()

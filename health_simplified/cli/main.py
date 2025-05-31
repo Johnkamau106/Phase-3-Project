@@ -1,6 +1,7 @@
 import typer
 from datetime import date
 from typing import Optional
+import re
 
 from health_simplified.db.database import get_db, Base, engine
 from health_simplified.models.user_model import User
@@ -11,257 +12,140 @@ from health_simplified.models.report_model import ReportService
 
 app = typer.Typer(help="Health Simplified CLI", rich_markup_mode="rich")
 
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
+
 def get_db_session():
     return next(get_db())
+
 
 def exit_with_error(message: str):
     typer.secho(f"Error: {message}", fg="red")
     raise typer.Exit(1)
 
-# --------- USER COMMANDS ---------
 
-@app.command("user create")
-def create_user(name: str):
+def normalize_name(name: str) -> str:
+    # Strip trailing hex suffixes from names like 'username_abc123'
+    return re.sub(r'_[a-f0-9]{6,}$', '', name)
+
+
+def main():
+    init_db()
     db = get_db_session()
-    try:
+
+    typer.echo("Welcome to Health Simplified CLI!\n")
+    users = User.get_all(db)
+
+    # Filter out first 15 users and show only from 16 onwards (as per your request)
+    filtered_users = [u for u in users if u.id > 15]
+
+    # Display filtered users with remapped numbering starting from 1
+    if not filtered_users:
+        typer.echo("No users found. Let's create one.\n")
+        name = typer.prompt("Enter your name")
         user = User.create(db, name)
         typer.secho(f"✓ Created user: {user.name} (ID: {user.id})", fg="green")
-    except ValueError as e:
-        exit_with_error(str(e))
-
-@app.command("user list")
-def list_users():
-    db = get_db_session()
-    users = User.get_all(db)
-    if not users:
-        typer.secho("No users found", fg="yellow")
-        return
-    for user in users:
-        typer.echo(f"• {user.name} (ID: {user.id})")
-
-@app.command("user delete")
-def delete_user(user_id: int):
-    db = get_db_session()
-    if User.delete(db, user_id):
-        typer.secho(f"✓ Deleted user ID: {user_id}", fg="green")
     else:
-        exit_with_error(f"User ID {user_id} not found")
+        typer.echo("Existing users:")
+        # Create a mapping from displayed number to real user object
+        display_to_user = {}
+        for idx, u in enumerate(filtered_users, start=1):
+            display_name = normalize_name(u.name)
+            typer.echo(f"  {idx}: {display_name}")
+            display_to_user[idx] = u
 
-# --------- FOOD ENTRY COMMANDS ---------
+        while True:
+            choice = typer.prompt("\nEnter your User number to select or type 'new' to create a new user")
+            if choice.lower() == "new":
+                name = typer.prompt("Enter your name")
+                existing = User.get_by_name(db, name)
+                if existing:
+                    typer.secho("User with that name already exists. Selecting existing user.", fg="yellow")
+                    user = existing
+                else:
+                    user = User.create(db, name)
+                    typer.secho(f"✓ Created user: {user.name} (ID: {user.id})", fg="green")
+                break
+            else:
+                try:
+                    sel_num = int(choice)
+                    if sel_num not in display_to_user:
+                        typer.secho("Invalid user number. Try again.", fg="red")
+                        continue
+                    user = display_to_user[sel_num]
+                    typer.secho(f"✓ Selected user: {user.name} (ID: {user.id})", fg="green")
+                    break
+                except ValueError:
+                    typer.secho("Invalid input. Please enter a number or 'new'.", fg="red")
 
-@app.command("entry add")
-def add_entry(
-    user: str,
-    food: str,
-    calories: int,
-    entry_date: Optional[str] = typer.Option(None, "--date", "-d")
-):
-    db = get_db_session()
-    if calories <= 0:
-        exit_with_error("Calories must be a positive integer")
+    while True:
+        typer.echo("\nMain Menu - Choose an option:")
+        typer.echo("1. Add a food entry")
+        typer.echo("2. Set nutrition goals")
+        typer.echo("3. Create a meal plan")
+        typer.echo("4. Show daily report")
+        typer.echo("5. Exit")
+        choice = typer.prompt("Enter number")
 
-    user_obj = User.get_by_name(db, user)
-    if not user_obj:
-        exit_with_error(f"User '{user}' not found")
+        if choice == "1":
+            food = typer.prompt("Food name")
+            calories = typer.prompt("Calories", type=int)
+            entry_date = typer.prompt("Date (YYYY-MM-DD) or leave blank", default="").strip()
+            try:
+                date_obj = date.fromisoformat(entry_date) if entry_date else date.today()
+                FoodEntry.create(db, user.id, food, calories, date_obj)
+                typer.secho(f"✓ Added {food} ({calories} kcal) on {date_obj}", fg="green")
+            except Exception as e:
+                exit_with_error(str(e))
 
-    try:
-        date_obj = date.fromisoformat(entry_date) if entry_date else date.today()
-    except ValueError:
-        exit_with_error("Date must be in YYYY-MM-DD format")
+        elif choice == "2":
+            daily = typer.prompt("Enter daily calorie goal", type=int)
+            weekly = typer.prompt("Enter weekly calorie goal", type=int)
+            Goal.create_or_update(db, user.id, daily, weekly)
+            typer.secho(f"✓ Set goals: {daily} daily / {weekly} weekly", fg="green")
 
-    entry = FoodEntry.create(db, user_obj.id, food, calories, date_obj)
-    typer.secho(f"✓ Added: {entry.food} ({entry.calories} kcal) on {entry.date}", fg="green")
+        elif choice == "3":
+            week = typer.prompt("Enter week number (e.g., 1)", type=int)
+            details = typer.prompt("Enter meal plan details")
+            MealPlan.create(db, user.id, week, details)
+            typer.secho(f"✓ Created meal plan for week {week}", fg="green")
 
-@app.command("entry list")
-def list_entries(
-    user: Optional[str] = typer.Option(None, "--user", "-u"),
-    entry_date: Optional[str] = typer.Option(None, "--date", "-d")
-):
-    db = get_db_session()
+        elif choice == "4":
+            entry_date = typer.prompt("Enter date (YYYY-MM-DD) or leave blank", default="").strip()
+            try:
+                report = ReportService.generate_daily_report(
+                    db,
+                    user.id,  # Pass user ID here (fix)
+                    date.fromisoformat(entry_date) if entry_date else None
+                )
+                typer.echo(f"\nDaily Report for {user.name} - {report['date']}")
+                typer.echo("=" * 40)
 
-    user_obj = None
-    if user:
-        user_obj = User.get_by_name(db, user)
-        if not user_obj:
-            exit_with_error(f"User '{user}' not found")
+                if report["daily_goal"] is not None:
+                    remaining = report["calorie_diff"]
+                    status = "green" if remaining >= 0 else "red"
+                    typer.secho(f"Remaining: {remaining} kcal", fg=status)
+                    typer.echo(f"Consumed: {report['total_calories']}/{report['daily_goal']} kcal")
+                else:
+                    typer.secho("No daily goal set", fg="yellow")
+                    typer.echo(f"Total Calories: {report['total_calories']} kcal")
 
-    try:
-        date_obj = date.fromisoformat(entry_date) if entry_date else None
-    except ValueError:
-        exit_with_error("Date must be in YYYY-MM-DD format")
+                typer.echo("\nFood Entries:")
+                for entry in report["entries"]:
+                    typer.echo(f"• {entry.food}: {entry.calories} kcal")
 
-    entries = FoodEntry.get_all(db, user_obj.id if user_obj else None, date_obj)
-    if not entries:
-        typer.echo("No entries found")
-        return
+            except Exception as e:
+                exit_with_error(str(e))
 
-    for entry in entries:
-        user_name = User.get_by_id(db, entry.user_id).name
-        typer.echo(f"• {entry.date}: {user_name} ate {entry.food} ({entry.calories} kcal) [ID: {entry.id}]")
+        elif choice == "5":
+            typer.echo("Goodbye!")
+            raise typer.Exit()
 
-@app.command("entry update")
-def update_entry(
-    entry_id: int,
-    food: Optional[str] = typer.Option(None, "--food", "-f"),
-    calories: Optional[int] = typer.Option(None, "--calories", "-c"),
-    entry_date: Optional[str] = typer.Option(None, "--date", "-d")
-):
-    db = get_db_session()
-    updates = {}
+        else:
+            typer.secho("Invalid option. Please select 1-5.", fg="red")
 
-    if food is not None:
-        updates["food"] = food
-    if calories is not None:
-        if calories <= 0:
-            exit_with_error("Calories must be a positive integer")
-        updates["calories"] = calories
-    if entry_date is not None:
-        try:
-            updates["date"] = date.fromisoformat(entry_date)
-        except ValueError:
-            exit_with_error("Date must be in YYYY-MM-DD format")
-
-    if not updates:
-        exit_with_error("No fields to update provided")
-
-    entry = FoodEntry.update(db, entry_id, **updates)
-    if entry:
-        typer.secho(f"✓ Updated entry ID: {entry_id}", fg="green")
-    else:
-        exit_with_error("Entry not found")
-
-@app.command("entry delete")
-def delete_entry(entry_id: int):
-    db = get_db_session()
-    if FoodEntry.delete(db, entry_id):
-        typer.secho(f"✓ Deleted entry ID: {entry_id}", fg="green")
-    else:
-        exit_with_error(f"Entry ID {entry_id} not found")
-
-# --------- GOAL COMMANDS ---------
-
-@app.command("goal set")
-def set_goal(user: str, daily: int, weekly: int):
-    db = get_db_session()
-    user_obj = User.get_by_name(db, user)
-    if not user_obj:
-        exit_with_error(f"User '{user}' not found")
-
-    goal = Goal.create_or_update(db, user_obj.id, daily, weekly)
-    typer.secho(f"✓ Goals set for {user}: {goal.daily_calories} daily / {goal.weekly_calories} weekly calories", fg="green")
-
-@app.command("goal show")
-def show_goal(user: str):
-    db = get_db_session()
-    user_obj = User.get_by_name(db, user)
-    if not user_obj:
-        exit_with_error(f"User '{user}' not found")
-
-    goal = Goal.get_by_user(db, user_obj.id)
-    if not goal:
-        typer.secho(f"No goals set for {user}", fg="yellow")
-        return
-
-    typer.echo(f"\nNutrition Goals for {user}:")
-    typer.echo("=" * 40)
-    typer.echo(f"Daily Target: {goal.daily_calories} kcal")
-    typer.echo(f"Weekly Target: {goal.weekly_calories} kcal")
-
-@app.command("goal list")
-def list_goals(user: str):
-    db = get_db_session()
-    user_obj = User.get_by_name(db, user)
-    if not user_obj:
-        exit_with_error(f"User '{user}' not found")
-
-    goal = Goal.get_by_user(db, user_obj.id)
-    if not goal:
-        typer.secho(f"No goals set for {user}", fg="yellow")
-        return
-
-    typer.echo(f"Daily: {goal.daily_calories} kcal")
-    typer.echo(f"Weekly: {goal.weekly_calories} kcal")
-
-# --------- MEAL PLAN COMMANDS ---------
-
-@app.command("plan-meal create")
-def create_plan(user: str, week: int, details: str):
-    db = get_db_session()
-    user_obj = User.get_by_name(db, user)
-    if not user_obj:
-        exit_with_error(f"User '{user}' not found")
-
-    plan = MealPlan.create(db, user_obj.id, week, details)
-    typer.secho(f"✓ Created meal plan for week {week}", fg="green")
-
-@app.command("plan-meal show")
-def show_plan(user: str, week: int):
-    db = get_db_session()
-    user_obj = User.get_by_name(db, user)
-    if not user_obj:
-        exit_with_error(f"User '{user}' not found")
-
-    plan = MealPlan.get_by_week(db, user_obj.id, week)
-    if not plan:
-        typer.secho(f"No meal plan found for week {week}", fg="yellow")
-        return
-
-    typer.echo(f"\nMeal Plan - Week {week}:")
-    typer.echo("=" * 40)
-    typer.echo(plan.plan_details)
-
-@app.command("plan-meal update")
-def update_plan(
-    plan_id: int,
-    week: Optional[int] = typer.Option(None, "--week", "-w"),
-    details: Optional[str] = typer.Option(None, "--details", "-d")
-):
-    db = get_db_session()
-    updates = {}
-    
-    if week is not None:
-        updates["week_number"] = week
-    if details is not None:
-        updates["plan_details"] = details
-
-    if not updates:
-        exit_with_error("No fields to update provided")
-
-    plan = MealPlan.update(db, plan_id, **updates)
-    if plan:
-        typer.secho(f"✓ Updated meal plan ID: {plan_id}", fg="green")
-    else:
-        exit_with_error("Meal plan not found")
-
-# --------- REPORT COMMANDS ---------
-
-@app.command("report daily")
-def daily_report(user: str, report_date: Optional[str] = typer.Option(None, "--date", "-d")):
-    db = get_db_session()
-    try:
-        report = ReportService.generate_daily_report(db, user, date.fromisoformat(report_date) if report_date else None)
-    except ValueError:
-        exit_with_error("Date must be in YYYY-MM-DD format")
-
-    typer.echo(f"\nDaily Report for {user} - {report['date']}")
-    typer.echo("=" * 40)
-
-    if report["daily_goal"] is not None:
-        remaining = report["calorie_diff"]
-        status = "green" if remaining >= 0 else "red"
-        typer.secho(f"Remaining: {remaining} kcal", fg=status)
-        typer.echo(f"Consumed: {report['total_calories']}/{report['daily_goal']} kcal")
-    else:
-        typer.secho("No daily goal set", fg="yellow")
-        typer.echo(f"Total Calories: {report['total_calories']} kcal")
-
-    typer.echo("\nFood Entries:")
-    for entry in report["entries"]:
-        typer.echo(f"• {entry.food}: {entry.calories} kcal")
 
 if __name__ == "__main__":
-    init_db()
-    app()
+    main()
