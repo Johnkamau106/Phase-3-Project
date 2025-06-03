@@ -12,24 +12,25 @@ from health_simplified.models.report_model import ReportService
 
 app = typer.Typer(help="Health Simplified CLI", rich_markup_mode="rich")
 
+
 def init_db():
     Base.metadata.create_all(bind=engine)
 
+
 def get_db_session():
     return next(get_db())
+
 
 def exit_with_error(message: str):
     typer.secho(f"Error: {message}", fg="red")
     raise typer.Exit(1)
 
+
 def normalize_name(name: str) -> str:
     return re.sub(r'_[a-f0-9]{6,}$', '', name)
 
-def main():
-    init_db()
-    db = get_db_session()
 
-    typer.echo("Welcome to Health Simplified CLI!\n")
+def select_or_create_user(db):
     users = User.get_all(db)
     filtered_users = [u for u in users if u.id > 15]
 
@@ -38,37 +39,46 @@ def main():
         name = typer.prompt("Enter your name")
         user = User.create(db, name)
         typer.secho(f"✓ Created user: {user.name} (ID: {user.id})", fg="green")
-    else:
-        typer.echo("Existing users:")
-        display_to_user = {}
-        for idx, u in enumerate(filtered_users, start=1):
-            display_name = normalize_name(u.name)
-            typer.echo(f"  {idx}: {display_name}")
-            display_to_user[idx] = u
+        return user
 
-        while True:
-            choice = typer.prompt("\nEnter your User number to select or type 'new' to create a new user")
-            if choice.lower() == "new":
-                name = typer.prompt("Enter your name")
-                existing = User.get_by_name(db, name)
-                if existing:
-                    typer.secho("User with that name already exists. Selecting existing user.", fg="yellow")
-                    user = existing
-                else:
-                    user = User.create(db, name)
-                    typer.secho(f"✓ Created user: {user.name} (ID: {user.id})", fg="green")
-                break
+    typer.echo("Existing users:")
+    display_to_user = {}
+    for idx, u in enumerate(filtered_users, start=1):
+        display_name = normalize_name(u.name)
+        typer.echo(f"  {idx}: {display_name}")
+        display_to_user[idx] = u
+
+    while True:
+        choice = typer.prompt("\nEnter your User number to select or type 'new' to create a new user")
+        if choice.lower() == "new":
+            name = typer.prompt("Enter your name")
+            existing = User.get_by_name(db, name)
+            if existing:
+                typer.secho("User with that name already exists. Selecting existing user.", fg="yellow")
+                return existing
             else:
-                try:
-                    sel_num = int(choice)
-                    if sel_num not in display_to_user:
-                        typer.secho("Invalid user number. Try again.", fg="red")
-                        continue
-                    user = display_to_user[sel_num]
-                    typer.secho(f"✓ Selected user: {user.name} (ID: {user.id})", fg="green")
-                    break
-                except ValueError:
-                    typer.secho("Invalid input. Please enter a number or 'new'.", fg="red")
+                user = User.create(db, name)
+                typer.secho(f"✓ Created user: {user.name} (ID: {user.id})", fg="green")
+                return user
+        else:
+            try:
+                sel_num = int(choice)
+                if sel_num not in display_to_user:
+                    typer.secho("Invalid user number. Try again.", fg="red")
+                    continue
+                user = display_to_user[sel_num]
+                typer.secho(f"✓ Selected user: {user.name} (ID: {user.id})", fg="green")
+                return user
+            except ValueError:
+                typer.secho("Invalid input. Please enter a number or 'new'.", fg="red")
+
+
+def main():
+    init_db()
+    db = get_db_session()
+
+    typer.echo("Welcome to Health Simplified CLI!\n")
+    user = select_or_create_user(db)
 
     while True:
         typer.echo("\nMain Menu - Choose an option:")
@@ -200,12 +210,13 @@ def main():
                 db.delete(user)
                 db.commit()
                 typer.secho(f"✓ User '{user.name}' and related data deleted", fg="green")
-                raise typer.Exit()
+                user = select_or_create_user(db)
             else:
                 typer.echo("User deletion canceled.")
 
         else:
-            typer.secho("Invalid option. Please select 1-11.", fg="red")
+            typer.secho("Invalid choice. Try again.", fg="red")
+
 
 if __name__ == "__main__":
     main()

@@ -2,7 +2,6 @@ from sqlalchemy import Column, Integer, String, ForeignKey, CheckConstraint
 from sqlalchemy.orm import relationship
 from health_simplified.db.database import Base
 
-
 class MealPlan(Base):
     __tablename__ = "meal_plans"
     __table_args__ = (
@@ -62,3 +61,8 @@ class MealPlan(Base):
             db.commit()
             return True
         return False
+
+    @classmethod
+    def delete_all_by_user(cls, db, user_id):  # <-- 🔥 This is the missing method
+        db.query(cls).filter_by(user_id=user_id).delete()
+        db.commit()

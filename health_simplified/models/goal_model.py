@@ -23,7 +23,7 @@ class Goal(Base):
             raise ValueError("Goals must be positive values")
         if weekly < daily:
             raise ValueError("Weekly goal should be ≥ daily goal")
-            
+
         goal = db.query(cls).filter(cls.user_id == user_id).first()
         if goal:
             goal.daily_calories = daily
@@ -35,7 +35,7 @@ class Goal(Base):
                 weekly_calories=weekly
             )
             db.add(goal)
-            
+
         db.commit()
         db.refresh(goal)
         return goal
@@ -43,3 +43,8 @@ class Goal(Base):
     @classmethod
     def get_by_user(cls, db, user_id):
         return db.query(cls).filter(cls.user_id == user_id).first()
+
+    @classmethod
+    def delete_by_user(cls, db, user_id):
+        db.query(cls).filter_by(user_id=user_id).delete()
+        db.commit()
