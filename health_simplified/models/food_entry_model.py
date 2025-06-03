@@ -58,11 +58,17 @@ class FoodEntry(Base):
             cls.user_id == user_id,
             cls.date == date
         ).all()
+
     @classmethod
     def delete(cls, db, entry_id):
         entry = db.query(cls).filter(cls.id == entry_id).first()
         if entry:
-           db.delete(entry)
-           db.commit()
-        return True
+            db.delete(entry)
+            db.commit()
+            return True
         return False
+
+    @classmethod
+    def delete_all_by_user(cls, db, user_id):
+        db.query(cls).filter_by(user_id=user_id).delete()
+        db.commit()

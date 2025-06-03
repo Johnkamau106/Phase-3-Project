@@ -12,23 +12,18 @@ from health_simplified.models.report_model import ReportService
 
 app = typer.Typer(help="Health Simplified CLI", rich_markup_mode="rich")
 
-
 def init_db():
     Base.metadata.create_all(bind=engine)
 
-
 def get_db_session():
     return next(get_db())
-
 
 def exit_with_error(message: str):
     typer.secho(f"Error: {message}", fg="red")
     raise typer.Exit(1)
 
-
 def normalize_name(name: str) -> str:
     return re.sub(r'_[a-f0-9]{6,}$', '', name)
-
 
 def main():
     init_db()
@@ -86,6 +81,8 @@ def main():
         typer.echo("7. Update meal plan")
         typer.echo("8. Delete meal plan")
         typer.echo("9. Exit")
+        typer.echo("10. Update user")
+        typer.echo("11. Delete user")
         choice = typer.prompt("Enter number")
 
         if choice == "1":
@@ -106,10 +103,13 @@ def main():
             typer.secho(f"✓ Set goals: {daily} daily / {weekly} weekly", fg="green")
 
         elif choice == "3":
-            week = typer.prompt("Enter week number (e.g., 1)", type=int)
-            details = typer.prompt("Enter meal plan details")
-            MealPlan.create(db, user.id, week, details)
-            typer.secho(f"✓ Created meal plan for week {week}", fg="green")
+            week = typer.prompt("Enter week number (1-52)", type=int)
+            for day in range(1, 8):
+                day_name = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"][day - 1]
+                details = typer.prompt(f"Enter meal plan for {day_name} (leave blank to skip)", default="").strip()
+                if details:
+                    MealPlan.create(db, user.id, week, day, details)
+            typer.secho(f"✓ Created meal plans for week {week}", fg="green")
 
         elif choice == "4":
             entry_date = typer.prompt("Enter date (YYYY-MM-DD) or leave blank", default="").strip()
@@ -159,31 +159,53 @@ def main():
 
         elif choice == "7":
             week = typer.prompt("Enter week number to update", type=int)
-            plan = MealPlan.get_by_week(db, user.id, week)
+            day = typer.prompt("Enter day of the week (1=Mon, 7=Sun)", type=int)
+            plan = MealPlan.get_by_day(db, user.id, week, day)
             if not plan:
-                typer.secho("No meal plan found for that week.", fg="yellow")
+                typer.secho("No meal plan found for that day.", fg="yellow")
             else:
-                new_week = typer.prompt(f"New week number [{plan.week_number}]", default=str(plan.week_number), type=int)
-                new_details = typer.prompt("Updated meal plan details", default=plan.plan_details)
-                MealPlan.update(db, plan.id, week_number=new_week, plan_details=new_details)
-                typer.secho(f"✓ Updated meal plan for week {new_week}", fg="green")
+                new_details = typer.prompt("Enter new plan details", default=plan.plan_details)
+                MealPlan.update(db, plan.id, plan_details=new_details)
+                typer.secho(f"✓ Updated meal plan for week {week}, day {day}", fg="green")
 
         elif choice == "8":
             week = typer.prompt("Enter week number to delete", type=int)
-            plan = MealPlan.get_by_week(db, user.id, week)
+            day = typer.prompt("Enter day of the week (1=Mon, 7=Sun)", type=int)
+            plan = MealPlan.get_by_day(db, user.id, week, day)
             if not plan:
-                typer.secho("No meal plan found for that week.", fg="yellow")
+                typer.secho("No meal plan found for that day.", fg="yellow")
             else:
                 MealPlan.delete(db, plan.id)
-                typer.secho(f"✓ Deleted meal plan for week {week}", fg="green")
+                typer.secho(f"✓ Deleted meal plan for week {week}, day {day}", fg="green")
 
         elif choice == "9":
             typer.echo("Goodbye!")
             raise typer.Exit()
 
-        else:
-            typer.secho("Invalid option. Please select 1-9.", fg="red")
+        elif choice == "10":
+            new_name = typer.prompt(f"Enter new name for user [{user.name}]", default=user.name).strip()
+            if new_name != user.name:
+                user.name = new_name
+                db.commit()
+                typer.secho(f"✓ User renamed to {new_name}", fg="green")
+            else:
+                typer.echo("No changes made.")
 
+        elif choice == "11":
+            confirm = typer.confirm(f"Are you sure you want to delete user '{user.name}' and all their data?")
+            if confirm:
+                FoodEntry.delete_all_by_user(db, user.id)
+                Goal.delete_by_user(db, user.id)
+                MealPlan.delete_all_by_user(db, user.id)
+                db.delete(user)
+                db.commit()
+                typer.secho(f"✓ User '{user.name}' and related data deleted", fg="green")
+                raise typer.Exit()
+            else:
+                typer.echo("User deletion canceled.")
+
+        else:
+            typer.secho("Invalid option. Please select 1-11.", fg="red")
 
 if __name__ == "__main__":
     main()
