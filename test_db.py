@@ -8,7 +8,7 @@ def test_connection():
 
     # Create tables if they don't exist
     Base.metadata.create_all(bind=engine)
-    print("✅ Tables created successfully")
+    print(" Tables created successfully")
 
     try:
         db = next(get_db())
@@ -25,9 +25,9 @@ def test_connection():
             print(f"Database exists: {exists}")
             print(f"File size: {os.path.getsize(db_path) if exists else 0} bytes")
 
-        print("✅ Database connection successful!")
+        print(" Database connection successful!")
     except Exception as e:
-        print(f"❌ Connection failed: {e}")
+        print(f" Connection failed: {e}")
     finally:
         db.close()
 

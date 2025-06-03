@@ -27,7 +27,6 @@ def exit_with_error(message: str):
 
 
 def normalize_name(name: str) -> str:
-    # Strip trailing hex suffixes from names like 'username_abc123'
     return re.sub(r'_[a-f0-9]{6,}$', '', name)
 
 
@@ -37,11 +36,8 @@ def main():
 
     typer.echo("Welcome to Health Simplified CLI!\n")
     users = User.get_all(db)
-
-    # Filter out first 15 users and show only from 16 onwards (as per your request)
     filtered_users = [u for u in users if u.id > 15]
 
-    # Display filtered users with remapped numbering starting from 1
     if not filtered_users:
         typer.echo("No users found. Let's create one.\n")
         name = typer.prompt("Enter your name")
@@ -49,7 +45,6 @@ def main():
         typer.secho(f"✓ Created user: {user.name} (ID: {user.id})", fg="green")
     else:
         typer.echo("Existing users:")
-        # Create a mapping from displayed number to real user object
         display_to_user = {}
         for idx, u in enumerate(filtered_users, start=1):
             display_name = normalize_name(u.name)
@@ -86,7 +81,11 @@ def main():
         typer.echo("2. Set nutrition goals")
         typer.echo("3. Create a meal plan")
         typer.echo("4. Show daily report")
-        typer.echo("5. Exit")
+        typer.echo("5. Update nutrition goal")
+        typer.echo("6. Delete nutrition goal")
+        typer.echo("7. Update meal plan")
+        typer.echo("8. Delete meal plan")
+        typer.echo("9. Exit")
         choice = typer.prompt("Enter number")
 
         if choice == "1":
@@ -117,7 +116,7 @@ def main():
             try:
                 report = ReportService.generate_daily_report(
                     db,
-                    user.id,  # Pass user ID here (fix)
+                    user.id,
                     date.fromisoformat(entry_date) if entry_date else None
                 )
                 typer.echo(f"\nDaily Report for {user.name} - {report['date']}")
@@ -140,11 +139,50 @@ def main():
                 exit_with_error(str(e))
 
         elif choice == "5":
+            goal = Goal.get_by_user(db, user.id)
+            if not goal:
+                typer.secho("No goal found to update.", fg="yellow")
+            else:
+                daily = typer.prompt(f"New daily goal [{goal.daily_calories}]", default=str(goal.daily_calories), type=int)
+                weekly = typer.prompt(f"New weekly goal [{goal.weekly_calories}]", default=str(goal.weekly_calories), type=int)
+                Goal.create_or_update(db, user.id, daily, weekly)
+                typer.secho(f"✓ Updated goals: {daily} daily / {weekly} weekly", fg="green")
+
+        elif choice == "6":
+            goal = Goal.get_by_user(db, user.id)
+            if not goal:
+                typer.secho("No goal found to delete.", fg="yellow")
+            else:
+                db.delete(goal)
+                db.commit()
+                typer.secho("✓ Deleted nutrition goal", fg="green")
+
+        elif choice == "7":
+            week = typer.prompt("Enter week number to update", type=int)
+            plan = MealPlan.get_by_week(db, user.id, week)
+            if not plan:
+                typer.secho("No meal plan found for that week.", fg="yellow")
+            else:
+                new_week = typer.prompt(f"New week number [{plan.week_number}]", default=str(plan.week_number), type=int)
+                new_details = typer.prompt("Updated meal plan details", default=plan.plan_details)
+                MealPlan.update(db, plan.id, week_number=new_week, plan_details=new_details)
+                typer.secho(f"✓ Updated meal plan for week {new_week}", fg="green")
+
+        elif choice == "8":
+            week = typer.prompt("Enter week number to delete", type=int)
+            plan = MealPlan.get_by_week(db, user.id, week)
+            if not plan:
+                typer.secho("No meal plan found for that week.", fg="yellow")
+            else:
+                MealPlan.delete(db, plan.id)
+                typer.secho(f"✓ Deleted meal plan for week {week}", fg="green")
+
+        elif choice == "9":
             typer.echo("Goodbye!")
             raise typer.Exit()
 
         else:
-            typer.secho("Invalid option. Please select 1-5.", fg="red")
+            typer.secho("Invalid option. Please select 1-9.", fg="red")
 
 
 if __name__ == "__main__":

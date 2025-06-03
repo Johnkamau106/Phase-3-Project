@@ -6,14 +6,14 @@ from typer.testing import CliRunner
 
 from health_simplified.db.database import Base
 from health_simplified.db.config import SQLALCHEMY_DATABASE_URL
-from health_simplified.cli.main import app  # ✅ Import your CLI app
+from health_simplified.cli.main import app  #  Import your CLI app
 
-# ✅ Provide a runner instance usable in tests
+#  Provide a runner instance usable in tests
 @pytest.fixture(scope="session")
 def runner():
     return CliRunner()
 
-# ✅ Set up test database engine
+#  Set up test database engine
 @pytest.fixture(scope="module")
 def test_engine():
     engine = create_engine(
@@ -24,7 +24,7 @@ def test_engine():
     yield engine
     Base.metadata.drop_all(bind=engine)
 
-# ✅ Create a new DB session for each test with safe rollback
+#  Create a new DB session for each test with safe rollback
 @pytest.fixture
 def test_db(test_engine):
     connection = test_engine.connect()
