@@ -63,6 +63,6 @@ class MealPlan(Base):
         return False
 
     @classmethod
-    def delete_all_by_user(cls, db, user_id):  # <-- 🔥 This is the missing method
+    def delete_all_by_user(cls, db, user_id):  
         db.query(cls).filter_by(user_id=user_id).delete()
         db.commit()
